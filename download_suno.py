@@ -6,15 +6,22 @@
 Baixa apenas o formato original do Suno (.m4a), SEM conversão.
 Rápido, sem ffmpeg, sem CPU extra.
 
-Depois de baixar, use o `converter_mp3.bat` para converter as playlists
-escolhidas para MP3.
+Usa `pycryptodome` em vez de `cryptography` (funciona em Termux/Android
+sem precisar compilar Rust).
+
+Depois de baixar, use o `converter_mp3.bat` (Windows) ou `ffmpeg` (Termux)
+para converter as playlists escolhidas para MP3.
 
 -----
-USAR COM O ARQUIVO .bat
+INSTALAR DEPENDÊNCIAS:
+    pip install requests rich pycryptodome
+
+-----
+USAR COM O ARQUIVO .bat (Windows)
 Basta executar o SUNO_Download_Start.bat e seguir o que é pedido.
 
 -----
-USAR COM PYTHON:
+USAR COM PYTHON (Windows/Linux/Termux):
 Interativo:
     python download_suno.py
 
@@ -40,17 +47,17 @@ try:
     import requests
 except ImportError:
     print("Dependência faltando: requests")
-    print("Instale com:  pip install requests rich cryptography")
+    print("Instale com:  pip install requests rich pycryptodome")
     sys.exit(3)
 
 try:
     import base64
     import hashlib
 
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from Crypto.Cipher import AES
 except ImportError:
-    print("Dependência faltando: cryptography")
-    print("Instale com:  pip install requests rich cryptography")
+    print("Dependência faltando: pycryptodome")
+    print("Instale com:  pip install requests rich pycryptodome")
     sys.exit(3)
 
 try:
@@ -69,11 +76,11 @@ try:
     from rich.text import Text
 except ImportError:
     print("Dependência faltando: rich")
-    print("Instale com:  pip install requests rich")
+    print("Instale com:  pip install requests rich pycryptodome")
     sys.exit(3)
 
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 API_PLAYLIST = "https://studio-api.prod.suno.com/api/playlist/{pid}"
 API_RIGHTS = "https://studio-api.prod.suno.com/api/mango/rights"
@@ -239,7 +246,7 @@ def pick_media(clip: dict):
 
 
 # --------------------------------------------------------------------------- #
-#  Descriptografia ("Mango")
+#  Descriptografia ("Mango") usando pycryptodome
 # --------------------------------------------------------------------------- #
 
 def fetch_rights(session: requests.Session, clip_id: str) -> dict:
@@ -266,19 +273,22 @@ def fetch_rights(session: requests.Session, clip_id: str) -> dict:
 
 
 def _unwrap(wrapped_b64: str, clip_id: str, user_key: bytes) -> bytes:
+    """Descriptografa a chave/iv embrulhados em AES-GCM (pycryptodome)."""
     w = base64.b64decode(wrapped_b64)
     nonce, ct, tag = w[:12], w[12:-16], w[-16:]
-    dec = Cipher(algorithms.AES(user_key), modes.GCM(nonce, tag)).decryptor()
-    dec.authenticate_additional_data(clip_id.encode())
-    return dec.update(ct) + dec.finalize()
+    cipher = AES.new(user_key, AES.MODE_GCM, nonce=nonce)
+    cipher.update(clip_id.encode())
+    return cipher.decrypt_and_verify(ct, tag)
 
 
 def decrypt_bytes(data: bytes, clip_id: str, rights: dict) -> bytes:
+    """Descriptografa o arquivo de áudio (AES-CTR) usando pycryptodome."""
     user_key = hashlib.sha256(rights["glt"].encode()).digest()
     key = _unwrap(rights["key"], clip_id, user_key)
-    counter = _unwrap(rights["iv"], clip_id, user_key)
-    dec = Cipher(algorithms.AES(key), modes.CTR(counter)).decryptor()
-    return dec.update(data) + dec.finalize()
+    counter_bytes = _unwrap(rights["iv"], clip_id, user_key)
+    counter_int = int.from_bytes(counter_bytes, "big")
+    cipher = AES.new(key, AES.MODE_CTR, nonce=b"", initial_value=counter_int)
+    return cipher.decrypt(data)
 
 
 def is_playable_audio(path: Path) -> bool:
@@ -350,7 +360,7 @@ def banner(console: Console) -> None:
         f"[bold]Download Playlists SUNO (M4A) [/]  v{__version__}\n"
         "[dim]Baixe faixas de playlists públicas do SUNO — sem limites.[/]\n"
         "[dim]Formato de saída: M4A (original do Suno, sem conversão).[/]\n"
-        "[dim]Depois use o 'converter_mp3.bat' para converter para MP3.[/]\n"
+        "[dim]Depois use o 'converter_mp3.bat' (Windows) ou ffmpeg (Termux).[/]\n"
         "[bright_black]by: Lonne Alien[/]\n"
         "[bold]«IDFC!»[/]",
         border_style="bright_magenta"))
@@ -449,7 +459,6 @@ def process_playlist(pid: str, args, console: Console) -> int:
                     size = human_size(dest.stat().st_size)
                     results.append((num, title, "skipped", size))
                     continue
-                # Arquivo existe mas ainda está criptografado — descriptografa no lugar
                 desc = f"{num} · {title} (descriptografando)"
                 fix_task = progress.add_task(desc[:52], total=None)
                 try:

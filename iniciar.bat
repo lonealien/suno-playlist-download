@@ -5,7 +5,7 @@ rem  ---------------------------------------------------------------
 rem  Este .bat:
 rem   1) Detecta se o Python esta instalado
 rem   2) Se nao estiver, baixa e instala silenciosamente
-rem   3) Instala as dependencias (requests, rich, cryptography)
+rem   3) Instala as dependencias (requests, rich, pycryptodome)
 rem   4) Executa o download_suno.py
 rem
 rem  Basta dar duplo-clique. Coloque este arquivo na MESMA pasta
@@ -26,7 +26,6 @@ echo   Pasta atual: %cd%
 echo ==============================================================
 echo.
 
-rem -------- Versao do Python que sera instalada se necessario --------
 set "PY_VER=3.12.7"
 set "PY_URL=https://www.python.org/ftp/python/%PY_VER%/python-%PY_VER%-amd64.exe"
 set "PY_INSTALLER=%TEMP%\python-%PY_VER%-amd64.exe"
@@ -105,7 +104,6 @@ if errorlevel 1 (
 
 del "%PY_INSTALLER%" >nul 2>nul
 
-rem -------- Localizar o Python recem-instalado --------
 set "PY="
 if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
     set "PY=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
@@ -136,26 +134,26 @@ echo       %PY%
 echo.
 
 rem ================================================================
-rem  PASSO 3 - Instalar / verificar dependencias
+rem  PASSO 3 - Instalar / verificar dependencias (pycryptodome!)
 rem ================================================================
 :instalar_deps
-echo  [..] Verificando dependencias (requests, rich, cryptography)...
-%PY% -c "import requests, rich, cryptography" >nul 2>nul
+echo  [..] Verificando dependencias (requests, rich, pycryptodome)...
+%PY% -c "import requests, rich, Crypto" >nul 2>nul
 if not errorlevel 1 (
     echo  [OK] Todas as dependencias ja estao instaladas.
     goto :executar
 )
 
 echo  [..] Instalando dependencias, aguarde...
-%PY% -m pip install --user --quiet --disable-pip-version-check --no-warn-script-location requests rich cryptography
+%PY% -m pip install --user --quiet --disable-pip-version-check --no-warn-script-location requests rich pycryptodome
 
 if errorlevel 1 (
     echo  [!] Primeira tentativa falhou. Atualizando pip e tentando de novo...
     %PY% -m pip install --user --quiet --upgrade pip
-    %PY% -m pip install --user --disable-pip-version-check requests rich cryptography
+    %PY% -m pip install --user --disable-pip-version-check requests rich pycryptodome
 )
 
-%PY% -c "import requests, rich, cryptography" >nul 2>nul
+%PY% -c "import requests, rich, Crypto" >nul 2>nul
 if errorlevel 1 (
     echo.
     echo  [X] Nao foi possivel instalar as dependencias.
